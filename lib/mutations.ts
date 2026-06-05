@@ -1,7 +1,7 @@
 // lib/mutations.ts
 export const LOGIN_MUTATION = /* GraphQL */ `
-  mutation Login {
-    login(identifier: "swanronco@gmail.com", password: "password1234") {
+  mutation Login($identifier: String!, $password: String!) {
+    login(identifier: $identifier, password: $password) {
       token
       user {
         id
@@ -14,16 +14,20 @@ export const LOGIN_MUTATION = /* GraphQL */ `
 
 export const LOGOUT_MUTATION = /* GraphQL */ `
   mutation Logout($token: String!) {
-    logout(token: $token)
+    logout(token: $token) {
+      success
+      message
+    }
   }
 `;
 
-export const SIGNUP_MUTATION_NAME = process.env.NEXT_PUBLIC_SIGNUP_MUTATION_NAME || 'createAccount';
-
-export function buildSignupMutation(): string {
-  return /* GraphQL */ `
-    mutation SignUp($firstName: String!, $lastName: String!, $email: String!, $username: String!, $passwordHash: String!) {
-      ${SIGNUP_MUTATION_NAME}(firstName: $firstName, lastName: $lastName, email: $email, username: $username, passwordHash: $passwordHash)
+export const SIGNUP_MUTATION = /* GraphQL */ `
+  mutation SignUp($input: UserInput!) {
+    createUser(input: $input) {
+      firstName
+      lastName
+      email
+      username
     }
-  `;
-}
+  }
+`;

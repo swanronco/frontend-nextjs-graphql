@@ -1,20 +1,13 @@
 // app/signup/page.tsx
 'use client';
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useEffect } from 'react';
 import TextInput from '../../components/TextInput';
 import { gqlRequest } from '../../lib/graphql';
-import { buildSignupMutation } from '../../lib/mutations';
-import { sha256Hex } from '../../lib/hash';
+import { SIGNUP_MUTATION } from '../../lib/mutations';
+import { getToken } from '../../lib/auth';
+import { useRouter } from 'next/navigation';
 
-type SignUpVars = {
-  firstName: string;
-  lastName: string;
-  email: string;
-  username: string;
-  passwordHash: string;
-};
-
-type SignUpResponseGeneric = Record<string, string | null>;
+type SignUpResponse = { createUser: { firstName: string; lastName: string; email: string; username: string } };
 
 export default function SignupPage() {
   const [firstName, setFirstName] = useState('');
@@ -25,24 +18,30 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (getToken()) { router.replace('/'); } else { setReady(true); }
+  }, []);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null); setMessage(null); setLoading(true);
     try {
-      const passwordHash = await sha256Hex(password);
-      const mutation = buildSignupMutation();
-      const vars: SignUpVars = { firstName, lastName, email, username, passwordHash };
-      const data = await gqlRequest<SignUpResponseGeneric>(mutation, vars);
-      const mutationName = (process.env.NEXT_PUBLIC_SIGNUP_MUTATION_NAME || 'createAccount') as string;
-      const result = data?.[mutationName];
-      setMessage((result as string) || 'Compte créé ✅');
+      const data = await gqlRequest<SignUpResponse>(SIGNUP_MUTATION, {
+        input: { firstName, lastName, email, username, password }
+      });
+      const result = data?.createUser;
+      setMessage(result ? `Compte créé ✅ (${result.username})` : 'Compte créé ✅');
     } catch (err: any) {
       setError(err.message ?? String(err));
     } finally {
       setLoading(false);
     }
   }
+
+  if (!ready) return null;
 
   return (
     <div className="card">
@@ -54,12 +53,11 @@ export default function SignupPage() {
         <TextInput id="username" label="Nom d'utilisateur" value={username} onChange={setUsername} autoComplete="username" />
         <TextInput id="password" label="Mot de passe" type="password" value={password} onChange={setPassword} autoComplete="new-password" />
         <div style={{display:'flex', gap:'0.75rem', alignItems:'center', marginTop:'0.5rem'}}>
-          <button type="submit" disabled={loading}>{loading ? 'Création…' : 'Créer le compte'}</button>
-          <small className="muted">Envoi de <code>passwordHash</code> côté client (SHA-256).</small>
+          <button type="submit" disabled={loading || !firstName || !lastName || !email || !username || !password}>{loading ? 'Création…' : 'Créer le compte'}</button>
         </div>
       </form>
       {message && <p className="success" style={{marginTop:'1rem'}}>{message}</p>}
-      {error && <p className="error" style={{marginTop:'1rem'}}>Erreur: {error}</p>}
+      {error && <p className="error" style={{marginTop:'1rem'}}>{error}</p>}
     </div>
   );
 }
