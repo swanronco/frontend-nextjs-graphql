@@ -16,14 +16,16 @@ build() {
 root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$root"
 
-mapfile -t overlays < <(find k8s/overlays -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
-if [[ ${#overlays[@]} -eq 0 ]]; then
+# Pas de 'mapfile' (absent du bash 3.2 livré avec macOS) : on lit la liste ligne à ligne.
+overlays="$(find k8s/overlays -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)"
+if [ -z "$overlays" ]; then
   echo "ℹ️  Aucun overlay sous k8s/overlays/* — rien à valider."
   exit 0
 fi
 
 fail=0
-for o in "${overlays[@]}"; do
+while IFS= read -r o; do
+  [ -z "$o" ] && continue
   if out=$(build "$o" 2>&1); then
     echo "✅ $o"
   else
@@ -31,7 +33,9 @@ for o in "${overlays[@]}"; do
     printf '%s\n' "$out" | sed 's/^/     /'
     fail=1
   fi
-done
+done <<EOF
+$overlays
+EOF
 
 if [[ $fail -eq 0 ]]; then
   echo "✔ kustomize : tous les overlays sont valides."
