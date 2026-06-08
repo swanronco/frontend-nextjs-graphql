@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Hook pré-push : valide les overlays Kustomize avant d'envoyer quoi que ce soit
+# au remote. Si la validation échoue, le push est bloqué.
+#
+# Activation (une fois par clone) :
+#   git config core.hooksPath .githooks
+exec "$(git rev-parse --show-toplevel)/scripts/validate-k8s.sh"
