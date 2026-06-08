@@ -7,6 +7,7 @@ patches:
   - path: patch-deployment-environnement.yaml
   - path: patch-deployment-replicas.yaml
   - path: patch-deployment-ressources.yaml
+  - path: patch-hpa.yaml
 images:
   - name: ghcr.io/swanronco/frontend-nextjs-graphql
     newTag: latest
