@@ -129,6 +129,10 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Endpoint GraphQL injecté AU BUILD (NEXT_PUBLIC_* figé par next build).
+          # Adapter l'URL selon l'environnement cible.
+          build-args: |
+            NEXT_PUBLIC_GRAPHQL_ENDPOINT=http://api.journalintime.eu/api/graphql
           # Cache de couches Docker partagé entre exécutions => builds bien plus rapides.
           cache-from: type=gha
           cache-to: type=gha,mode=max
