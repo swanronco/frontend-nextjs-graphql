@@ -1,5 +1,5 @@
 // lib/graphql.ts
-const defaultEndpoint = process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || 'http://localhost:8080/jaxrs-liquibase-graphql-api-0.0.1-SNAPSHOT/api/graphql';
+const defaultEndpoint = process.env.GRAPHQL_ENDPOINT || 'http://localhost:8080/api/graphql';
 
 export async function gqlRequest<T = any>(query: string, variables: Record<string, any> = {}, token?: string): Promise<T> {
   const res = await fetch(defaultEndpoint, {

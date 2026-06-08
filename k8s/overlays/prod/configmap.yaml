@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: graphql-endpoint-config
+  namespace: frontend
+data:
+  GRAPHQL_ENDPOINT: ""

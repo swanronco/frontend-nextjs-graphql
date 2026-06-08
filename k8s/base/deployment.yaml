@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-nextjs-graphql
+  namespace: frontend
+  labels:
+    app: frontend-nextjs-graphql
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend-nextjs-graphql
+  template:
+    metadata:
+      labels:
+        app: frontend-nextjs-graphql
+    spec:
+      serviceAccountName: frontend-nextjs-graphql
+      containers:
+        - name: frontend-nextjs-graphql
+          image: ghcr.io/swanronco/frontend-nextjs-graphql:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: GRAPHQL_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: graphql-endpoint-config
+                  key: GRAPHQL_ENDPOINT
