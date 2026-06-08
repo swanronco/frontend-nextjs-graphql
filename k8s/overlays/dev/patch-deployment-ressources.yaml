@@ -1,0 +1,16 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-nextjs-graphql
+spec:
+  template:
+    spec:
+      containers:
+        - name: frontend-nextjs-graphql
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "200Mi"
+            limits:
+              cpu: "300m"
+              memory: "400Mi"

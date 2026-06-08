@@ -6,59 +6,153 @@ on:
   pull_request:
     branches: [main]
 
+# Permissions minimales par défaut (principe du moindre privilège).
+# Chaque job qui a besoin de plus les redéclare localement.
+permissions:
+  contents: read
+
+# Annule les exécutions précédentes encore en cours sur la même branche/PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
   IMAGE: ghcr.io/swanronco/frontend-nextjs-graphql
+  NODE_VERSION: '18'
+  KUSTOMIZE_VERSION: '5.4.3'
 
 jobs:
-  build-and-push:
+  # ---------------------------------------------------------------------------
+  # Job 1 : valide les manifests Kubernetes (kustomize build doit réussir).
+  # ---------------------------------------------------------------------------
+  validate-k8s:
+    name: Valider les manifests Kubernetes
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Récupérer le code (checkout)
+        uses: actions/checkout@v4
+
+      # Installation d'une version épinglée de kustomize (le script "master"
+      # d'origine pouvait casser sans prévenir et exécutait du code distant via curl|bash).
+      - name: Installer kustomize (version épinglée)
+        run: |
+          curl -sSLo kustomize.tar.gz \
+            "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
+          tar -xzf kustomize.tar.gz
+          sudo mv kustomize /usr/local/bin/
+          kustomize version
+
+      - name: Vérifier l'overlay dev (kustomize build)
+        run: kustomize build k8s/overlays/dev
+
+      - name: Vérifier l'overlay prod (kustomize build)
+        run: kustomize build k8s/overlays/prod
+
+  # ---------------------------------------------------------------------------
+  # Job 2 : GARDE-FOU qualité de l'app (lint + compilation).
+  # ⚠️ Ce job ne produit AUCUN artefact conservé : le résultat du `npm run build`
+  #    (.next/) est jeté à la fin du job. Son seul rôle est de faire échouer la CI
+  #    tôt si le code ne lint pas ou ne compile pas — utile surtout sur les PR,
+  #    où le build de l'image Docker (job 3) n'est pas exécuté.
+  #    L'image réellement déployée est construite dans le job 3 ci-dessous.
+  # ---------------------------------------------------------------------------
+  quality-checks:
+    name: Garde-fou qualité (lint + compilation, résultat jeté)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Récupérer le code (checkout)
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js + cache npm
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Installer les dépendances (npm ci)
+        run: npm ci
+
+      - name: Lint du code (next lint)
+        run: npm run lint
+
+      - name: Compilation de vérification (next build, .next/ jeté ensuite)
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # Job 3 : construit l'IMAGE Docker (qui recompile l'app via le Dockerfile)
+  #         et la pousse sur GHCR. C'est l'artefact réellement déployé.
+  #         Ne s'exécute que sur push vers main, après les 2 jobs de validation.
+  # ---------------------------------------------------------------------------
+  build-and-push-image:
+    name: Build & push de l'image Docker vers GHCR
+    needs: [quality-checks, validate-k8s]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
       packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Récupérer le code (checkout)
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: npm
-          cache-dependency-path: package-lock.json
+      # Buildx = moteur BuildKit ; indispensable pour le cache "type=gha".
+      - name: Préparer Docker Buildx (moteur BuildKit)
+        uses: docker/setup-buildx-action@v3
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
-        env:
-          NEXT_PUBLIC_GRAPHQL_ENDPOINT: ${{ secrets.NEXT_PUBLIC_GRAPHQL_ENDPOINT }}
-
-      - name: Log in to GHCR
+      - name: Se connecter au registry GHCR
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push image
-        uses: docker/build-push-action@v5
+      # Génère tags + labels OCI (source, révision, date...) automatiquement.
+      - name: Générer les tags & labels de l'image
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=,format=long
+
+      - name: Construire l'image Docker (recompile l'app) & pousser sur GHCR
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: |
-            ${{ env.IMAGE }}:latest
-            ${{ env.IMAGE }}:${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache de couches Docker partagé entre exécutions => builds bien plus rapides.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-  deploy:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    environment: production
-
-    steps:
-      - name: Deploy to Kubernetes
-        run: kubectl rollout restart deployment/frontend
-        env:
-          KUBECONFIG: ${{ secrets.KUBECONFIG }}
+  # deploy:
+  #   name: Déployer sur Kubernetes (rollout restart)
+  #   needs: build-and-push-image
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 10
+  #   if: github.ref == 'refs/heads/main'
+  #   environment: production
+  #
+  #   steps:
+  #     - name: Install kubectl
+  #       uses: azure/setup-kubectl@v4
+  #
+  #     # KUBECONFIG doit être un CHEMIN vers un fichier, pas le contenu du kubeconfig.
+  #     # Stocke le secret KUBECONFIG encodé en base64 :  base64 -w0 ~/.kube/config
+  #     - name: Configure kubeconfig
+  #       run: |
+  #         mkdir -p "$HOME/.kube"
+  #         echo "${{ secrets.KUBECONFIG }}" | base64 -d > "$HOME/.kube/config"
+  #         chmod 600 "$HOME/.kube/config"
+  #
+  #     # Nom réel du Deployment = frontend-nextjs-graphql, namespace = frontend.
+  #     - name: Deploy to Kubernetes
+  #       run: kubectl -n frontend rollout restart deployment/frontend-nextjs-graphql
