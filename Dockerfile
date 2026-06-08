@@ -4,6 +4,11 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
+# Endpoint GraphQL appelé par le NAVIGATEUR : doit être présent AU BUILD, car Next.js
+# fige les variables NEXT_PUBLIC_* pendant `next build` (pas au runtime du conteneur).
+# Surchargé par --build-arg en CI selon l'environnement (dev/prod).
+ARG NEXT_PUBLIC_GRAPHQL_ENDPOINT=http://api.journalintime.eu/api/graphql
+ENV NEXT_PUBLIC_GRAPHQL_ENDPOINT=$NEXT_PUBLIC_GRAPHQL_ENDPOINT
 RUN npm run build
 
 # Étape 2 : Exécution de l'application

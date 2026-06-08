@@ -1,5 +1,7 @@
 // lib/graphql.ts
-const defaultEndpoint = process.env.GRAPHQL_ENDPOINT || 'http://localhost:8080/api/graphql';
+// NEXT_PUBLIC_ : exposé au navigateur (les requêtes GraphQL partent du client).
+// Valeur figée au build (next build) — voir Dockerfile / build-arg en CI.
+const defaultEndpoint = process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || 'http://localhost:8080/api/graphql';
 
 export async function gqlRequest<T = any>(query: string, variables: Record<string, any> = {}, token?: string): Promise<T> {
   const res = await fetch(defaultEndpoint, {
